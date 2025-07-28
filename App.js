@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   ScrollView,
+  Image,
 } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 
@@ -63,7 +64,6 @@ export default function App() {
       console.log('Fetching plants from:', API_URL);
       const res = await fetch(API_URL);
       console.log('Response status:', res.status);
-      console.log('Response headers:', res.headers);
       
       if (!res.ok) {
         const errorText = await res.text();
@@ -90,7 +90,6 @@ export default function App() {
     } catch (error) {
       console.error('Error fetching plants:', error);
       Alert.alert('Error', `Failed to fetch plants: ${error.message}`);
-      // Set empty array so app doesn't crash
       setPlants([]);
     }
   };
@@ -98,6 +97,56 @@ export default function App() {
   useEffect(() => {
     fetchPlants();
   }, []);
+
+  // Enhanced function to parse watering interval from Perenual data
+  const parseWateringInterval = (detailJson) => {
+    // Try watering_general_benchmark first
+    if (detailJson.watering_general_benchmark?.value) {
+      const benchmarkValue = detailJson.watering_general_benchmark.value;
+      if (typeof benchmarkValue === 'string') {
+        // Handle ranges like "5-7" or "Every 5-7 days"
+        const match = benchmarkValue.match(/(\d+)(?:-(\d+))?/);
+        if (match) {
+          const min = parseInt(match[1], 10);
+          const max = match[2] ? parseInt(match[2], 10) : min;
+          return Math.round((min + max) / 2); // Use average of range
+        }
+      } else if (typeof benchmarkValue === 'number') {
+        return benchmarkValue;
+      }
+    }
+    
+    // Fallback to watering description
+    if (detailJson.watering) {
+      const watering = detailJson.watering.toLowerCase();
+      if (watering.includes('daily') || watering.includes('every day')) {
+        return 1;
+      } else if (watering.includes('twice a week')) {
+        return 3;
+      } else if (watering.includes('week') && !watering.includes('month')) {
+        // Look for numbers in the watering description
+        const weekMatch = watering.match(/(\d+)\s*(?:times?\s*(?:a|per)\s*week|week)/);
+        if (weekMatch) {
+          const timesPerWeek = parseInt(weekMatch[1], 10);
+          return Math.round(7 / timesPerWeek);
+        }
+        return 7; // Default to once a week
+      } else if (watering.includes('month')) {
+        const monthMatch = watering.match(/(\d+)\s*(?:times?\s*(?:a|per)\s*month|month)/);
+        if (monthMatch) {
+          const timesPerMonth = parseInt(monthMatch[1], 10);
+          return Math.round(30 / timesPerMonth);
+        }
+        return 30; // Default to once a month
+      } else if (watering.includes('frequent')) {
+        return 2;
+      } else if (watering.includes('minimal') || watering.includes('rare')) {
+        return 14;
+      }
+    }
+    
+    return 7; // Default fallback - once a week
+  };
 
   // Fetch watering info & description from Perenual API when species changes
   useEffect(() => {
@@ -108,62 +157,54 @@ export default function App() {
       return;
     }
     
-    // First, search for the species to get its ID and basic info
     const fetchSpeciesDetails = async () => {
       try {
+        console.log(`Searching for species: ${species}`);
         const searchResponse = await fetch(
-          `https://perenual.com/api/v2/species-list?key=${PERENUAL_API_KEY}&q=${encodeURIComponent(species)}`
+          `https://perenual.com/api/species-list?key=${PERENUAL_API_KEY}&q=${encodeURIComponent(species)}`
         );
+        
+        if (!searchResponse.ok) {
+          throw new Error(`Search API error: ${searchResponse.status}`);
+        }
+        
         const searchJson = await searchResponse.json();
+        console.log('Search response:', searchJson);
         
         if (searchJson.data && searchJson.data.length > 0) {
           const foundSpecies = searchJson.data[0];
           setSpeciesId(foundSpecies.id);
           
+          console.log(`Getting details for species ID: ${foundSpecies.id}`);
           // Get detailed information using the species ID
           const detailResponse = await fetch(
-            `https://perenual.com/api/v2/species/details/${foundSpecies.id}?key=${PERENUAL_API_KEY}`
+            `https://perenual.com/api/species/details/${foundSpecies.id}?key=${PERENUAL_API_KEY}`
           );
-          const detailJson = await detailResponse.json();
           
-          // Extract watering interval from detailed response
-          let intervalDays = null;
-          if (detailJson.watering_general_benchmark?.value) {
-            const benchmarkValue = detailJson.watering_general_benchmark.value;
-            if (typeof benchmarkValue === 'string') {
-              // Handle ranges like "5-7"
-              const match = benchmarkValue.match(/(\d+)/);
-              if (match) {
-                intervalDays = parseInt(match[1], 10);
-              }
-            } else if (typeof benchmarkValue === 'number') {
-              intervalDays = benchmarkValue;
-            }
-          } else if (detailJson.watering) {
-            // Fallback: parse watering frequency description
-            const watering = detailJson.watering.toLowerCase();
-            if (watering.includes('frequent') || watering.includes('daily')) {
-              intervalDays = 1;
-            } else if (watering.includes('week')) {
-              intervalDays = 7;
-            } else if (watering.includes('month')) {
-              intervalDays = 30;
-            } else {
-              intervalDays = 3; // Default fallback
-            }
+          if (!detailResponse.ok) {
+            throw new Error(`Detail API error: ${detailResponse.status}`);
           }
-
-          setWateringInterval(intervalDays || 3);
-          setSpeciesDescription(detailJson.description || foundSpecies.common_name || 'No description available');
+          
+          const detailJson = await detailResponse.json();
+          console.log('Detail response:', detailJson);
+          
+          // Extract watering interval using enhanced parsing
+          const intervalDays = parseWateringInterval(detailJson);
+          
+          setWateringInterval(intervalDays);
+          setSpeciesDescription(detailJson.description || foundSpecies.common_name || species);
+          
+          console.log(`Set watering interval to ${intervalDays} days`);
         } else {
-          setWateringInterval(3); // Default fallback
-          setSpeciesDescription('Species not found in database');
+          console.log('No species found in search');
+          setWateringInterval(7); // Default fallback
+          setSpeciesDescription(`${species} - Species not found in database`);
           setSpeciesId(null);
         }
       } catch (error) {
         console.error('Error fetching species details:', error);
-        setWateringInterval(3); // Default fallback
-        setSpeciesDescription('Error fetching species info');
+        setWateringInterval(7); // Default fallback
+        setSpeciesDescription(`${species} - Error fetching species info`);
         setSpeciesId(null);
       }
     };
@@ -177,12 +218,19 @@ export default function App() {
       return;
     }
     
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(lastWatered)) {
+      Alert.alert('Validation', 'Please enter date in YYYY-MM-DD format');
+      return;
+    }
+    
     try {
       console.log('Adding/updating plant with data:', {
         plantName,
-        speciesQuery: species,
+        species: species,
         lastWatered,
-        wateringIntervalDays: wateringInterval || 3,
+        wateringIntervalDays: wateringInterval || 7,
         description: speciesDescription,
         speciesId: speciesId,
       });
@@ -192,9 +240,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plantName,
-          speciesQuery: species,
+          species: species,
           lastWatered,
-          wateringIntervalDays: wateringInterval || 3,
+          wateringIntervalDays: wateringInterval || 7,
           description: speciesDescription,
           speciesId: speciesId,
         }),
@@ -231,72 +279,156 @@ export default function App() {
 
   const handleEdit = (plant) => {
     setPlantName(plant.PlantName);
-    setSpecies(plant.Species || null);
+    setSpecies(plant.Species || plant.species || null);
     setLastWatered(plant.LastWatered);
     setEditingPlant(plant.PlantName);
     setWateringInterval(plant.wateringIntervalDays || null);
     setSpeciesDescription(plant.description || '');
+    setSpeciesId(plant.speciesId || null);
   };
 
-  // When a plant is clicked: open modal and fetch fresh data from Perenual
+  // Enhanced plant click handler with better error handling
   const handlePlantClick = async (plant) => {
     setSelectedPlantInfo(plant);
     setModalVisible(true);
     setModalLoading(true);
 
-    // If we have stored species ID, fetch fresh details
-    if (plant.speciesId) {
-      try {
+    try {
+      // If we have stored species ID, fetch fresh details
+      if (plant.speciesId) {
+        console.log(`Fetching fresh details for species ID: ${plant.speciesId}`);
         const response = await fetch(
-          `https://perenual.com/api/v2/species/details/${plant.speciesId}?key=${PERENUAL_API_KEY}`
+          `https://perenual.com/api/species/details/${plant.speciesId}?key=${PERENUAL_API_KEY}`
         );
-        const detailJson = await response.json();
         
-        // Update the plant info with fresh data
-        setSelectedPlantInfo(prev => ({
-          ...prev,
-          perenualData: detailJson,
-          freshDescription: detailJson.description || prev.description,
-          sunlight: detailJson.sunlight,
-          careLevel: detailJson.care_level,
-          watering: detailJson.watering,
-          wateringBenchmark: detailJson.watering_general_benchmark,
-          cycle: detailJson.cycle,
-          growth_rate: detailJson.growth_rate,
-          maintenance: detailJson.maintenance,
-          poisonous_to_pets: detailJson.poisonous_to_pets,
-          poisonous_to_humans: detailJson.poisonous_to_humans,
-          default_image: detailJson.default_image
-        }));
-      } catch (error) {
-        console.error('Error fetching fresh plant details:', error);
+        if (response.ok) {
+          const detailJson = await response.json();
+          console.log('Fresh plant details:', detailJson);
+          
+          // Update the plant info with fresh data
+          setSelectedPlantInfo(prev => ({
+            ...prev,
+            perenualData: detailJson,
+            freshDescription: detailJson.description || prev.description,
+            sunlight: detailJson.sunlight,
+            careLevel: detailJson.care_level,
+            watering: detailJson.watering,
+            wateringBenchmark: detailJson.watering_general_benchmark,
+            cycle: detailJson.cycle,
+            growth_rate: detailJson.growth_rate,
+            maintenance: detailJson.maintenance,
+            poisonous_to_pets: detailJson.poisonous_to_pets,
+            poisonous_to_humans: detailJson.poisonous_to_humans,
+            default_image: detailJson.default_image,
+            indoor: detailJson.indoor,
+            hardiness: detailJson.hardiness,
+            hardiness_location: detailJson.hardiness_location,
+          }));
+        } else {
+          console.error(`API error: ${response.status}`);
+        }
+      } else if (plant.Species || plant.species) {
+        // If no species ID but we have species name, try to fetch by name
+        console.log(`No species ID, searching by name: ${plant.Species || plant.species}`);
+        const searchResponse = await fetch(
+          `https://perenual.com/api/species-list?key=${PERENUAL_API_KEY}&q=${encodeURIComponent(plant.Species || plant.species)}`
+        );
+        
+        if (searchResponse.ok) {
+          const searchJson = await searchResponse.json();
+          if (searchJson.data && searchJson.data.length > 0) {
+            const foundSpecies = searchJson.data[0];
+            
+            // Get detailed info
+            const detailResponse = await fetch(
+              `https://perenual.com/api/species/details/${foundSpecies.id}?key=${PERENUAL_API_KEY}`
+            );
+            
+            if (detailResponse.ok) {
+              const detailJson = await detailResponse.json();
+              
+              setSelectedPlantInfo(prev => ({
+                ...prev,
+                speciesId: foundSpecies.id,
+                perenualData: detailJson,
+                freshDescription: detailJson.description || prev.description,
+                sunlight: detailJson.sunlight,
+                careLevel: detailJson.care_level,
+                watering: detailJson.watering,
+                wateringBenchmark: detailJson.watering_general_benchmark,
+                cycle: detailJson.cycle,
+                growth_rate: detailJson.growth_rate,
+                maintenance: detailJson.maintenance,
+                poisonous_to_pets: detailJson.poisonous_to_pets,
+                poisonous_to_humans: detailJson.poisonous_to_humans,
+                default_image: detailJson.default_image,
+                indoor: detailJson.indoor,
+                hardiness: detailJson.hardiness,
+                hardiness_location: detailJson.hardiness_location,
+              }));
+            }
+          }
+        }
       }
+    } catch (error) {
+      console.error('Error fetching fresh plant details:', error);
     }
     
     setModalLoading(false);
   };
 
-  const checkForReminders = () => {
+  // Enhanced reminder check with better logic
+  const checkForReminders = useCallback(() => {
     const now = new Date();
+    const reminders = [];
+    
     plants.forEach((plant) => {
-      const last = new Date(plant.LastWatered);
-      const daysAgo = Math.floor((now - last) / (1000 * 60 * 60 * 24));
-      const interval = plant.wateringIntervalDays || 3;
-      if (daysAgo >= interval) {
-        Alert.alert('Reminder', `${plant.PlantName} needs watering! (${daysAgo} days since last watered)`);
+      try {
+        const last = new Date(plant.LastWatered);
+        const daysAgo = Math.floor((now - last) / (1000 * 60 * 60 * 24));
+        const interval = plant.wateringIntervalDays || 7;
+        
+        if (daysAgo >= interval) {
+          reminders.push(`${plant.PlantName} needs watering! (${daysAgo} days since last watered, interval: ${interval} days)`);
+        }
+      } catch (error) {
+        console.error(`Error checking reminder for ${plant.PlantName}:`, error);
       }
     });
-  };
-
-  useEffect(() => {
-    const interval = setInterval(checkForReminders, 60000);
-    return () => clearInterval(interval);
+    
+    if (reminders.length > 0) {
+      Alert.alert(
+        'Watering Reminders', 
+        reminders.join('\n\n'),
+        [{ text: 'OK', style: 'default' }]
+      );
+    }
   }, [plants]);
 
+  useEffect(() => {
+    if (plants.length > 0) {
+      const interval = setInterval(checkForReminders, 60000); // Check every minute
+      return () => clearInterval(interval);
+    }
+  }, [plants, checkForReminders]);
+
   const daysSince = (dateString) => {
-    const now = new Date();
-    const last = new Date(dateString);
-    return Math.floor((now - last) / (1000 * 60 * 60 * 24));
+    try {
+      const now = new Date();
+      const last = new Date(dateString);
+      return Math.floor((now - last) / (1000 * 60 * 60 * 24));
+    } catch (error) {
+      console.error('Error calculating days since:', error);
+      return 0;
+    }
+  };
+
+  const formatDate = (dateString) => {
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch (error) {
+      return dateString;
+    }
   };
 
   return (
@@ -304,7 +436,7 @@ export default function App() {
       <FlatList
         style={styles.container}
         data={plants}
-        keyExtractor={(item) => item.PlantName}
+        keyExtractor={(item) => item.PlantName || item.plantName}
         keyboardShouldPersistTaps="handled"
         scrollEnabled={!dropdownOpen}
         ListHeaderComponent={
@@ -339,8 +471,25 @@ export default function App() {
                   nestedScrollEnabled: true,
                 }}
                 listMode="SCROLLVIEW"
+                searchable={true}
+                searchPlaceholder="Search or add custom species..."
+                addCustomItem={true}
               />
             </View>
+
+            {/* Show watering interval info when species is selected */}
+            {wateringInterval && (
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
+                  💧 Recommended watering: Every {wateringInterval} days
+                </Text>
+                {speciesDescription && (
+                  <Text style={styles.infoTextSmall} numberOfLines={2}>
+                    {speciesDescription}
+                  </Text>
+                )}
+              </View>
+            )}
 
             <TextInput
               placeholder="Last Watered (YYYY-MM-DD)"
@@ -348,6 +497,7 @@ export default function App() {
               onChangeText={setLastWatered}
               style={styles.input}
               placeholderTextColor="#666"
+              keyboardType="numeric"
             />
 
             <View style={{ marginTop: 10 }}>
@@ -356,28 +506,62 @@ export default function App() {
                 onPress={addOrUpdatePlant}
                 color="#4CAF50"
               />
+              {editingPlant && (
+                <View style={{ marginTop: 10 }}>
+                  <Button
+                    title="Cancel Edit"
+                    onPress={() => {
+                      setEditingPlant(null);
+                      setPlantName('');
+                      setSpecies(null);
+                      setLastWatered('');
+                      setWateringInterval(null);
+                      setSpeciesDescription('');
+                      setSpeciesId(null);
+                    }}
+                    color="#ff6b6b"
+                  />
+                </View>
+              )}
             </View>
           </View>
         }
         renderItem={({ item }) => {
           const daysAgo = daysSince(item.LastWatered);
-          const interval = item.wateringIntervalDays || 3;
+          const interval = item.wateringIntervalDays || 7;
           const needsWatering = daysAgo >= interval;
+          const species = item.Species || item.species || 'Unknown species';
+          
           return (
             <TouchableOpacity 
               onPress={() => handlePlantClick(item)} 
-              style={[styles.plantRow, { zIndex: dropdownOpen ? -1 : 1 }]}
+              style={[
+                styles.plantRow, 
+                { 
+                  zIndex: dropdownOpen ? -1 : 1,
+                  backgroundColor: needsWatering ? '#ffebee' : '#c6f8f3',
+                  borderColor: needsWatering ? '#f44336' : '#4CAF50',
+                }
+              ]}
               disabled={dropdownOpen}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.plantName}>
                   <Text style={{ fontWeight: 'bold' }}>{item.PlantName}</Text>
-                  {`: Last watered ${daysAgo === 0 ? 'today' : `${daysAgo} days ago`} (every ${interval} days)`}
+                  <Text style={{ fontWeight: 'normal', color: '#666' }}> ({species})</Text>
                 </Text>
-                {needsWatering && <Text style={styles.alert}>⚠️ Needs water!</Text>}
+                <Text style={styles.plantDetails}>
+                  Last watered: {daysAgo === 0 ? 'today' : `${daysAgo} days ago`} • Every {interval} days
+                </Text>
+                {needsWatering && (
+                  <Text style={styles.alert}>⚠️ Needs water! ({daysAgo - interval} days overdue)</Text>
+                )}
               </View>
               <TouchableOpacity 
-                onPress={() => handleEdit(item)} 
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleEdit(item);
+                }} 
                 style={styles.editButton}
                 disabled={dropdownOpen}
               >
@@ -386,126 +570,171 @@ export default function App() {
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={{ padding: 20, textAlign: 'center' }}>No plants yet.</Text>}
+        ListEmptyComponent={
+          <Text style={{ padding: 20, textAlign: 'center', fontSize: 16, color: '#666' }}>
+            No plants yet. Add your first plant above! 🌱
+          </Text>
+        }
         contentContainerStyle={{ paddingBottom: 50 }}
+      />
 
-        />
+      {/* Enhanced Modal for plant info */}
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>{selectedPlantInfo?.PlantName}</Text>
+              <Text style={styles.modalSubtitle}>
+                Species: {selectedPlantInfo?.Species || selectedPlantInfo?.species || 'Unknown'}
+              </Text>
+              
+              {modalLoading ? (
+                <View style={{ alignItems: 'center', marginVertical: 30 }}>
+                  <ActivityIndicator size="large" color="#4CAF50" />
+                  <Text style={{ marginTop: 10, color: '#666' }}>Loading plant details...</Text>
+                </View>
+              ) : (
+                <>
+                  {selectedPlantInfo?.default_image?.regular_url && (
+                    <View style={{ alignItems: 'center', marginVertical: 15 }}>
+                      <Image 
+                        source={{ uri: selectedPlantInfo.default_image.regular_url }}
+                        style={{ width: 200, height: 150, borderRadius: 8 }}
+                        resizeMode="cover"
+                      />
+                    </View>
+                  )}
+                  
+                  {/* Basic Care Info */}
+                  <View style={styles.infoSection}>
+                    <Text style={styles.sectionTitle}>📅 Watering Schedule</Text>
+                    <Text style={styles.infoText}>
+                      Last watered: {formatDate(selectedPlantInfo?.LastWatered)} 
+                      ({daysSince(selectedPlantInfo?.LastWatered)} days ago)
+                    </Text>
+                    <Text style={styles.infoText}>
+                      Watering interval: Every {selectedPlantInfo?.wateringIntervalDays || 7} days
+                    </Text>
+                    {selectedPlantInfo?.watering && (
+                      <Text style={styles.infoText}>
+                        Perenual recommendation: {selectedPlantInfo.watering}
+                      </Text>
+                    )}
+                  </View>
 
-        {/* Modal for plant info */}
-        <Modal
-          visible={modalVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <ScrollView>
-                <Text style={styles.modalTitle}>{selectedPlantInfo?.PlantName}</Text>
-                <Text style={styles.modalSubtitle}>Species: {selectedPlantInfo?.Species}</Text>
-                
-                {modalLoading ? (
-                  <ActivityIndicator size="large" color="#4CAF50" style={{ marginVertical: 20 }} />
-                ) : (
-                  <>
-                    {selectedPlantInfo?.default_image?.regular_url && (
-                      <View style={{ alignItems: 'center', marginVertical: 10 }}>
-                        {/* Note: In React Native, you'd use Image component here */}
-                        <Text style={{ fontStyle: 'italic', color: '#666' }}>
-                          [Plant image would display here]
-                        </Text>
-                      </View>
+                  {/* Description */}
+                  {(selectedPlantInfo?.freshDescription || selectedPlantInfo?.description) && (
+                    <View style={styles.infoSection}>
+                      <Text style={styles.sectionTitle}>📖 Description</Text>
+                      <Text style={styles.descriptionText}>
+                        {selectedPlantInfo?.freshDescription || selectedPlantInfo?.description}
+                      </Text>
+                    </View>
+                  )}
+                  
+                  {/* Care Information */}
+                  <View style={styles.infoSection}>
+                    <Text style={styles.sectionTitle}>🌿 Care Information</Text>
+                    
+                    {selectedPlantInfo?.sunlight && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>☀️ Sunlight: </Text>
+                        {Array.isArray(selectedPlantInfo.sunlight) 
+                          ? selectedPlantInfo.sunlight.join(', ') 
+                          : selectedPlantInfo.sunlight}
+                      </Text>
                     )}
                     
-                    <Text style={{ marginVertical: 10, fontSize: 16 }}>
-                      {selectedPlantInfo?.freshDescription || selectedPlantInfo?.description || 'No description available.'}
-                    </Text>
+                    {selectedPlantInfo?.careLevel && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>📊 Care Level: </Text>
+                        {selectedPlantInfo.careLevel}
+                      </Text>
+                    )}
                     
-                    <View style={{ marginVertical: 10 }}>
-                      <Text style={{ fontWeight: 'bold', fontSize: 16 }}>Care Information:</Text>
-                      
-                      <Text style={{ marginTop: 5 }}>
-                        <Text style={{ fontWeight: '600' }}>Watering: </Text>
-                        {selectedPlantInfo?.watering || 'Unknown'}
-                        {selectedPlantInfo?.wateringBenchmark?.value && 
-                          ` (Every ${selectedPlantInfo.wateringBenchmark.value} ${selectedPlantInfo.wateringBenchmark.unit || 'days'})`
-                        }
+                    {selectedPlantInfo?.cycle && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>🔄 Life Cycle: </Text>
+                        {selectedPlantInfo.cycle}
                       </Text>
-                      
-                      <Text style={{ marginTop: 5 }}>
-                        <Text style={{ fontWeight: '600' }}>Watering interval: </Text>
-                        {selectedPlantInfo?.wateringIntervalDays
-                          ? `${selectedPlantInfo.wateringIntervalDays} days`
-                          : 'Unknown'}
+                    )}
+                    
+                    {selectedPlantInfo?.growth_rate && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>📈 Growth Rate: </Text>
+                        {selectedPlantInfo.growth_rate}
                       </Text>
-                      
-                      {selectedPlantInfo?.sunlight && (
-                        <Text style={{ marginTop: 5 }}>
-                          <Text style={{ fontWeight: '600' }}>Sunlight: </Text>
-                          {Array.isArray(selectedPlantInfo.sunlight) 
-                            ? selectedPlantInfo.sunlight.join(', ') 
-                            : selectedPlantInfo.sunlight}
+                    )}
+                    
+                    {selectedPlantInfo?.maintenance && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>🔧 Maintenance: </Text>
+                        {selectedPlantInfo.maintenance}
+                      </Text>
+                    )}
+
+                    {selectedPlantInfo?.indoor !== undefined && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>🏠 Indoor suitable: </Text>
+                        {selectedPlantInfo.indoor ? 'Yes' : 'No'}
+                      </Text>
+                    )}
+
+                    {selectedPlantInfo?.hardiness && (
+                      <Text style={styles.infoText}>
+                        <Text style={styles.infoLabel}>❄️ Hardiness: </Text>
+                        {selectedPlantInfo.hardiness}
+                        {selectedPlantInfo.hardiness_location && 
+                          ` (${selectedPlantInfo.hardiness_location})`}
+                      </Text>
+                    )}
+                  </View>
+                  
+                  {/* Safety Information */}
+                  {(selectedPlantInfo?.poisonous_to_pets !== undefined || 
+                    selectedPlantInfo?.poisonous_to_humans !== undefined) && (
+                    <View style={[styles.infoSection, { backgroundColor: '#fff3cd', borderColor: '#ffc107' }]}>
+                      <Text style={[styles.sectionTitle, { color: '#856404' }]}>⚠️ Safety Information</Text>
+                      {selectedPlantInfo?.poisonous_to_pets !== undefined && (
+                        <Text style={[styles.infoText, { 
+                          color: selectedPlantInfo.poisonous_to_pets ? '#e74c3c' : '#27ae60',
+                          fontWeight: '600'
+                        }]}>
+                          🐕 {selectedPlantInfo.poisonous_to_pets ? 'Poisonous to pets' : 'Safe for pets'}
                         </Text>
                       )}
-                      
-                      {selectedPlantInfo?.careLevel && (
-                        <Text style={{ marginTop: 5 }}>
-                          <Text style={{ fontWeight: '600' }}>Care Level: </Text>
-                          {selectedPlantInfo.careLevel}
+                      {selectedPlantInfo?.poisonous_to_humans !== undefined && (
+                        <Text style={[styles.infoText, { 
+                          color: selectedPlantInfo.poisonous_to_humans ? '#e74c3c' : '#27ae60',
+                          fontWeight: '600'
+                        }]}>
+                          👤 {selectedPlantInfo.poisonous_to_humans ? 'Poisonous to humans' : 'Safe for humans'}
                         </Text>
-                      )}
-                      
-                      {selectedPlantInfo?.cycle && (
-                        <Text style={{ marginTop: 5 }}>
-                          <Text style={{ fontWeight: '600' }}>Life Cycle: </Text>
-                          {selectedPlantInfo.cycle}
-                        </Text>
-                      )}
-                      
-                      {selectedPlantInfo?.growth_rate && (
-                        <Text style={{ marginTop: 5 }}>
-                          <Text style={{ fontWeight: '600' }}>Growth Rate: </Text>
-                          {selectedPlantInfo.growth_rate}
-                        </Text>
-                      )}
-                      
-                      {selectedPlantInfo?.maintenance && (
-                        <Text style={{ marginTop: 5 }}>
-                          <Text style={{ fontWeight: '600' }}>Maintenance: </Text>
-                          {selectedPlantInfo.maintenance}
-                        </Text>
-                      )}
-                      
-                      {(selectedPlantInfo?.poisonous_to_pets !== undefined || selectedPlantInfo?.poisonous_to_humans !== undefined) && (
-                        <View style={{ marginTop: 10 }}>
-                          <Text style={{ fontWeight: 'bold', color: '#e74c3c' }}>Safety Information:</Text>
-                          {selectedPlantInfo?.poisonous_to_pets !== undefined && (
-                            <Text style={{ color: selectedPlantInfo.poisonous_to_pets ? '#e74c3c' : '#27ae60' }}>
-                              {selectedPlantInfo.poisonous_to_pets ? '⚠️ Poisonous to pets' : '✅ Safe for pets'}
-                            </Text>
-                          )}
-                          {selectedPlantInfo?.poisonous_to_humans !== undefined && (
-                            <Text style={{ color: selectedPlantInfo.poisonous_to_humans ? '#e74c3c' : '#27ae60' }}>
-                              {selectedPlantInfo.poisonous_to_humans ? '⚠️ Poisonous to humans' : '✅ Safe for humans'}
-                            </Text>
-                          )}
-                        </View>
                       )}
                     </View>
-                  </>
-                )}
-                
-                <View style={{ marginTop: 20 }}>
-                  <Button title="Close" onPress={() => setModalVisible(false)} color="#4CAF50" />
-                </View>
-              </ScrollView>
-            </View>
+                  )}
+                </>
+              )}
+              
+              <View style={{ marginTop: 20, marginBottom: 10 }}>
+                <Button 
+                  title="Close" 
+                  onPress={() => setModalVisible(false)} 
+                  color="#4CAF50" 
+                />
+              </View>
+            </ScrollView>
           </View>
-        </Modal>
-
-      </View>
-    );
-  }
+        </View>
+      </Modal>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -531,94 +760,112 @@ const styles = StyleSheet.create({
     color: '#000',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
+  infoBox: {
+    backgroundColor: '#e8f5e8',
+    borderColor: '#4CAF50',
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 15,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#2e7d32',
+    marginBottom: 4,
+  },
+  infoTextSmall: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+  },
   dropdown: {
     borderColor: '#4CAF50',
     backgroundColor: '#c6f8f3',
     borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    minHeight: 48,
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: '#000',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-  },
-  dropdownPlaceholder: {
-    fontSize: 16,
-    color: '#666',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-  },
-  dropdownContainer: {
-    borderColor: '#4CAF50',
-    borderWidth: 1,
-    borderRadius: 6,
-    backgroundColor: '#c6f8f3',
-    zIndex: 9999,
-    elevation: 9999,
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-  },
-  dropdownItemText: {
-    fontSize: 16,
-    color: '#000',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-  },
-  dropdownSelectedText: {
-    fontSize: 16,
-    color: '#000',
-    fontWeight: '600',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-  },
-  subheader: {
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  plantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    backgroundColor: '#c6f8f3',
-    borderColor: '#4CAF50',
-    borderWidth: 1,
-    padding: 10,
-    borderRadius: 6,
-  },
-  plantName: {
-    fontSize: 16,
-  },
-  alert: {
-    color: 'red',
-    marginTop: 2,
-  },
-  editButton: {
-    paddingHorizontal: 10,
-  },
-  editButtonText: {
-    fontSize: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  modalSubtitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-});
+        borderRadius: 6,
+        paddingHorizontal: 12,
+        minHeight: 48,
+      },
+      dropdownText: {
+        fontSize: 16,
+        color: '#000',
+        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      },
+      dropdownPlaceholder: {
+        fontSize: 16,
+        color: '#666',
+        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      },
+      dropdownContainer: {
+        borderColor: '#4CAF50',
+        borderWidth: 1,
+        borderRadius: 6,
+        backgroundColor: '#c6f8f3',
+        zIndex: 9999,
+        elevation: 9999,
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
+      },
+      dropdownItemText: {
+        fontSize: 16,
+        color: '#000',
+        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      },
+      dropdownSelectedText: {
+        fontSize: 16,
+        color: '#000',
+        fontWeight: '600',
+        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+      },
+      subheader: {
+        fontSize: 22,
+        fontWeight: '600',
+        marginBottom: 10,
+      },
+      plantRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+        backgroundColor: '#c6f8f3',
+        borderColor: '#4CAF50',
+        borderWidth: 1,
+        padding: 10,
+        borderRadius: 6,
+      },
+      plantName: {
+        fontSize: 16,
+      },
+      alert: {
+        color: 'red',
+        marginTop: 2,
+      },
+      editButton: {
+        paddingHorizontal: 10,
+      },
+      editButtonText: {
+        fontSize: 20,
+      },
+      modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        padding: 20,
+      },
+      modalContent: {
+        backgroundColor: 'white',
+        borderRadius: 12,
+        padding: 20,
+        maxHeight: '80%',
+      },
+      modalTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+      },
+      modalSubtitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        marginBottom: 10,
+      },
+    });
