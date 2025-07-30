@@ -16,20 +16,19 @@ import {
   Image,
 } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const commonPlants = [
   'Spider Plant',
   'Snake Plant',
   'Pothos',
-  'Peace Lily',
   'Aloe Vera',
-  'Succulent',
-  'Fiddle Leaf Fig',
-  'ZZ Plant',
   'Tomato',
   'Cucumber',
   'Bell Pepper',
-  'Jalapeño',
+  'Orchid',
+  'Lavender',
+  'Dracaena',
 ];
 
 const API_URL = 'https://yjf4i5vcg2.execute-api.us-east-1.amazonaws.com/dev/plants';
@@ -41,6 +40,10 @@ export default function App() {
   const [species, setSpecies] = useState(null);
   const [lastWatered, setLastWatered] = useState('');
   const [editingPlant, setEditingPlant] = useState(null);
+
+  // Date picker state
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
   // Info from Perenual API for selected species:
   const [wateringInterval, setWateringInterval] = useState(null);
@@ -57,6 +60,41 @@ export default function App() {
   const [selectedPlantInfo, setSelectedPlantInfo] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [speciesId, setSpeciesId] = useState(null);
+
+  // Helper function to format date as YYYY-MM-DD
+  const formatDateForAPI = (date) => {
+    const safeDate = new Date(date);
+    safeDate.setHours(12, 0, 0, 0); // Prevents off-by-one due to time zone conversion
+  
+    const year = safeDate.getFullYear();
+    const month = String(safeDate.getMonth() + 1).padStart(2, '0');
+    const day = String(safeDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };  
+
+  // Helper function to parse date string to Date object
+  const parseAPIDate = (dateString) => {
+    if (!dateString) return new Date();
+    try {
+      const date = new Date(dateString);
+      return isNaN(date.getTime()) ? new Date() : date;
+    } catch (error) {
+      console.error('Error parsing date:', error);
+      return new Date();
+    }
+  };
+
+  // Date picker handlers
+  const onDateChange = (event, selectedDate) => {
+    const currentDate = selectedDate || new Date();
+    setShowDatePicker(Platform.OS === 'ios');
+    setSelectedDate(currentDate);
+    setLastWatered(formatDateForAPI(currentDate));
+  };
+
+  const showDatePickerModal = () => {
+    setShowDatePicker(true);
+  };
 
   // Fetch plants from backend API
   const fetchPlants = async () => {
@@ -221,7 +259,7 @@ export default function App() {
     // Validate date format
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(lastWatered)) {
-      Alert.alert('Validation', 'Please enter date in YYYY-MM-DD format');
+      Alert.alert('Validation', 'Please select a valid date');
       return;
     }
     
@@ -263,6 +301,7 @@ export default function App() {
       setPlantName('');
       setSpecies(null);
       setLastWatered('');
+      setSelectedDate(new Date());
       setWateringInterval(null);
       setSpeciesDescription('');
       setEditingPlant(null);
@@ -281,8 +320,13 @@ export default function App() {
     setPlantName(plant.PlantName);
     setSpecies(plant.Species || plant.species || null);
     setLastWatered(plant.LastWatered);
+    setSelectedDate(parseAPIDate(plant.LastWatered));
     setEditingPlant(plant.PlantName);
-    setWateringInterval(plant.wateringIntervalDays || null);
+    
+    // FIX: Ensure watering interval is properly set with fallback
+    const intervalFromAPI = plant.wateringIntervalDays || plant.WateringIntervalDays;
+    setWateringInterval(intervalFromAPI || 7); // Default to 7 if not found
+    
     setSpeciesDescription(plant.description || '');
     setSpeciesId(plant.speciesId || null);
   };
@@ -377,7 +421,50 @@ export default function App() {
     setModalLoading(false);
   };
 
-  // Enhanced reminder check with better logic
+  // Delete plant function
+  const deletePlant = async (plantName) => {
+    Alert.alert(
+      'Delete Plant',
+      `Are you sure you want to delete "${plantName}"?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('Deleting plant:', plantName);
+              const response = await fetch(`${API_URL}/${encodeURIComponent(plantName)}`, {
+                method: 'DELETE',
+              });
+              
+              console.log('Delete response status:', response.status);
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Delete error response:', errorText);
+                throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+              }
+              
+              console.log('Plant deleted successfully');
+              
+              // Refresh the plants list
+              await fetchPlants();
+              
+              Alert.alert('Success', `${plantName} has been deleted.`);
+              
+            } catch (error) {
+              console.error('Error deleting plant:', error);
+              Alert.alert('Error', `Failed to delete plant: ${error.message}`);
+            }
+          },
+        },
+      ]
+    );
+  };
   const checkForReminders = useCallback(() => {
     const now = new Date();
     const reminders = [];
@@ -386,7 +473,8 @@ export default function App() {
       try {
         const last = new Date(plant.LastWatered);
         const daysAgo = Math.floor((now - last) / (1000 * 60 * 60 * 24));
-        const interval = plant.wateringIntervalDays || 7;
+        // FIX: Use proper fallback for watering interval
+        const interval = plant.wateringIntervalDays || plant.WateringIntervalDays || 7;
         
         if (daysAgo >= interval) {
           reminders.push(`${plant.PlantName} needs watering! (${daysAgo} days since last watered, interval: ${interval} days)`);
@@ -426,6 +514,20 @@ export default function App() {
   const formatDate = (dateString) => {
     try {
       return new Date(dateString).toLocaleDateString();
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  const formatDateForDisplay = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
     } catch (error) {
       return dateString;
     }
@@ -477,35 +579,36 @@ export default function App() {
               />
             </View>
 
-            {/* Show watering interval info when species is selected */}
-            {wateringInterval && (
-              <View style={styles.infoBox}>
-                <Text style={styles.infoText}>
-                  💧 Recommended watering: Every {wateringInterval} days
-                </Text>
-                {speciesDescription && (
-                  <Text style={styles.infoTextSmall} numberOfLines={2}>
-                    {speciesDescription}
-                  </Text>
-                )}
+            {/* Date Picker Section */}
+            <TouchableOpacity 
+              style={styles.datePickerButton} 
+              onPress={showDatePickerModal}
+            >
+              <Text style={styles.datePickerButtonText}>
+                📅 Last Watered: {lastWatered ? formatDateForDisplay(lastWatered) : 'Select Date'}
+              </Text>
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <View style={styles.datePickerWrapper}>
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  is24Hour={true}
+                  display="default"
+                  onChange={onDateChange}
+                  maximumDate={new Date()}
+                />
               </View>
             )}
 
-            <TextInput
-              placeholder="Last Watered (YYYY-MM-DD)"
-              value={lastWatered}
-              onChangeText={setLastWatered}
-              style={styles.input}
-              placeholderTextColor="#666"
-              keyboardType="numeric"
-            />
 
             <View style={{ marginTop: 10 }}>
-              <Button
-                title={editingPlant ? 'Update Plant' : 'Add Plant'}
-                onPress={addOrUpdatePlant}
-                color="#4CAF50"
-              />
+            <Button
+              title={editingPlant ? 'Update Plant' : 'Add Plant'}
+              onPress={addOrUpdatePlant}
+              color="#4CAF50"
+            />
               {editingPlant && (
                 <View style={{ marginTop: 10 }}>
                   <Button
@@ -515,6 +618,7 @@ export default function App() {
                       setPlantName('');
                       setSpecies(null);
                       setLastWatered('');
+                      setSelectedDate(new Date());
                       setWateringInterval(null);
                       setSpeciesDescription('');
                       setSpeciesId(null);
@@ -528,7 +632,8 @@ export default function App() {
         }
         renderItem={({ item }) => {
           const daysAgo = daysSince(item.LastWatered);
-          const interval = item.wateringIntervalDays || 7;
+          // FIX: Use proper fallback for watering interval in display
+          const interval = item.wateringIntervalDays || item.WateringIntervalDays || 7;
           const needsWatering = daysAgo >= interval;
           const species = item.Species || item.species || 'Unknown species';
           
@@ -557,16 +662,28 @@ export default function App() {
                   <Text style={styles.alert}>⚠️ Needs water! ({daysAgo - interval} days overdue)</Text>
                 )}
               </View>
-              <TouchableOpacity 
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleEdit(item);
-                }} 
-                style={styles.editButton}
-                disabled={dropdownOpen}
-              >
-                <Text style={styles.editButtonText}>✏️</Text>
-              </TouchableOpacity>
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity 
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleEdit(item);
+                  }} 
+                  style={styles.actionButton}
+                  disabled={dropdownOpen}
+                >
+                  <Text style={styles.actionButtonText}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    deletePlant(item.PlantName);
+                  }} 
+                  style={[styles.actionButton, styles.deleteButton]}
+                  disabled={dropdownOpen}
+                >
+                  <Text style={styles.actionButtonText}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
             </TouchableOpacity>
           );
         }}
@@ -618,7 +735,7 @@ export default function App() {
                       ({daysSince(selectedPlantInfo?.LastWatered)} days ago)
                     </Text>
                     <Text style={styles.infoText}>
-                      Watering interval: Every {selectedPlantInfo?.wateringIntervalDays || 7} days
+                      Watering interval: Every {selectedPlantInfo?.wateringIntervalDays || selectedPlantInfo?.WateringIntervalDays || 7} days
                     </Text>
                     {selectedPlantInfo?.watering && (
                       <Text style={styles.infoText}>
@@ -760,6 +877,22 @@ const styles = StyleSheet.create({
     color: '#000',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
+  datePickerButton: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#c6f8f3',
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: '#000',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    textAlign: 'center',
+  },
   infoBox: {
     backgroundColor: '#e8f5e8',
     borderColor: '#4CAF50',
@@ -778,94 +911,138 @@ const styles = StyleSheet.create({
     color: '#666',
     fontStyle: 'italic',
   },
+  infoLabel: {
+    fontWeight: 'bold',
+  },
   dropdown: {
     borderColor: '#4CAF50',
     backgroundColor: '#c6f8f3',
     borderWidth: 1,
-        borderRadius: 6,
-        paddingHorizontal: 12,
-        minHeight: 48,
-      },
-      dropdownText: {
-        fontSize: 16,
-        color: '#000',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      },
-      dropdownPlaceholder: {
-        fontSize: 16,
-        color: '#666',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      },
-      dropdownContainer: {
-        borderColor: '#4CAF50',
-        borderWidth: 1,
-        borderRadius: 6,
-        backgroundColor: '#c6f8f3',
-        zIndex: 9999,
-        elevation: 9999,
-        position: 'absolute',
-        top: '100%',
-        left: 0,
-        right: 0,
-      },
-      dropdownItemText: {
-        fontSize: 16,
-        color: '#000',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      },
-      dropdownSelectedText: {
-        fontSize: 16,
-        color: '#000',
-        fontWeight: '600',
-        fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-      },
-      subheader: {
-        fontSize: 22,
-        fontWeight: '600',
-        marginBottom: 10,
-      },
-      plantRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-        backgroundColor: '#c6f8f3',
-        borderColor: '#4CAF50',
-        borderWidth: 1,
-        padding: 10,
-        borderRadius: 6,
-      },
-      plantName: {
-        fontSize: 16,
-      },
-      alert: {
-        color: 'red',
-        marginTop: 2,
-      },
-      editButton: {
-        paddingHorizontal: 10,
-      },
-      editButtonText: {
-        fontSize: 20,
-      },
-      modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        padding: 20,
-      },
-      modalContent: {
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 20,
-        maxHeight: '80%',
-      },
-      modalTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-      },
-      modalSubtitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        marginBottom: 10,
-      },
-    });
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    minHeight: 48,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#000',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  dropdownPlaceholder: {
+    fontSize: 16,
+    color: '#666',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  dropdownContainer: {
+    borderColor: '#4CAF50',
+    borderWidth: 1,
+    borderRadius: 6,
+    backgroundColor: '#c6f8f3',
+    zIndex: 9999,
+    elevation: 9999,
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#000',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  dropdownSelectedText: {
+    fontSize: 16,
+    color: '#000',
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  subheader: {
+    fontSize: 22,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  plantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#c6f8f3',
+    borderColor: '#4CAF50',
+    borderWidth: 1,
+    padding: 10,
+    borderRadius: 6,
+  },
+  plantName: {
+    fontSize: 16,
+  },
+  plantDetails: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  alert: {
+    color: 'red',
+    marginTop: 2,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginLeft: 5,
+    borderRadius: 4,
+  },
+  deleteButton: {
+    
+  },
+  actionButtonText: {
+    fontSize: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  modalSubtitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 15,
+    color: '#666',
+  },
+  infoSection: {
+    backgroundColor: '#c6f8f3',
+    borderColor: '#4CAF50',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
+  },
+  descriptionText: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 20,
+  },
+  datePickerWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+  },
+});
