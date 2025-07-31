@@ -32,7 +32,7 @@ const commonPlants = [
 ];
 
 const API_URL = 'https://yjf4i5vcg2.execute-api.us-east-1.amazonaws.com/dev/plants';
-const PERENUAL_API_KEY = ''; 
+const PERENUAL_API_KEY = 'sk-uKPu6886783f4ebfe11585'; 
 
 export default function App() {
   const [plants, setPlants] = useState([]);
@@ -653,7 +653,8 @@ export default function App() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.plantName}>
                   <Text style={{ fontWeight: 'bold' }}>{item.PlantName}</Text>
-                  <Text style={{ fontWeight: 'normal', color: '#666' }}> ({species})</Text>
+                  <Text style={{ fontWeight: 'normal'}}> ({species})</Text>
+                  <Text style={{ color: '#4CAF50', fontWeight: '600', fontSize: 16 }}>  More Info</Text>
                 </Text>
                 <Text style={styles.plantDetails}>
                   Last watered: {daysAgo === 0 ? 'today' : `${daysAgo} days ago`} • Every {interval} days
@@ -860,11 +861,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fffee8',
   },
   header: {
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: 'bold',
     textAlign: 'center',
     marginTop: 50,
     marginBottom: 20,
+    fontFamily: 'MarkerFelt-Thin',
   },
   input: {
     borderColor: '#4CAF50',
@@ -971,7 +973,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   plantName: {
-    fontSize: 16,
+    fontSize: 20,
+    fontFamily: 'MarkerFelt-Thin',
   },
   plantDetails: {
     fontSize: 14,
@@ -1014,12 +1017,13 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 5,
+    fontFamily: 'MarkerFelt-Thin',
   },
   modalSubtitle: {
     fontSize: 18,
     fontWeight: '600',
     marginBottom: 15,
-    color: '#666',
+    color: '#4CAF50',
   },
   infoSection: {
     backgroundColor: '#c6f8f3',
@@ -1034,6 +1038,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
     color: '#333',
+    fontFamily: 'MarkerFelt-Thin',
   },
   descriptionText: {
     fontSize: 14,
