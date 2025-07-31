@@ -32,7 +32,7 @@ const commonPlants = [
 ];
 
 const API_URL = 'https://yjf4i5vcg2.execute-api.us-east-1.amazonaws.com/dev/plants';
-const PERENUAL_API_KEY = 'sk-uKPu6886783f4ebfe11585'; 
+const PERENUAL_API_KEY = 'provided at request'; 
 
 export default function App() {
   const [plants, setPlants] = useState([]);
