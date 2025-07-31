@@ -80,15 +80,11 @@ npm install
 
 ### 3. Add Environment Variables
 
-Create a `.env` file in the root directory and add your Perenual API key:
+Create a `.env` file in the root directory and add Perenual API key:
 
 ```
 PERENUAL_API_KEY=your_api_key_here
 ```
-
-> 🔒 Note: The `.env` file is already listed in `.gitignore` and won’t be committed to version control.
-
-If you don’t have an API key, you can [request one here](https://perenual.com/docs/api) or contact the maintainer.
 
 ### 4. Start the App
 
