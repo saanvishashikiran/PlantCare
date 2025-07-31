@@ -61,18 +61,39 @@ Please contact me if you would like to borrow my API key.
 
 ## ▶️ Running the App Locally
 
-### 1. Clone the repository
+### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/plantcare-app.git
+git clone https://github.com/your-username/plantcare-app.git
 cd plantcare-app
+```
 
-2. Install dependencies
-Ensure you have Node.js and Expo CLI installed.
+### 2. Install Dependencies
+
+Make sure you have [Node.js](https://nodejs.org/) and [Expo CLI](https://docs.expo.dev/workflow/expo-cli/) installed.
+
+Install project dependencies:
+
 ```bash
 npm install
+```
 
-4. Start the app
-npm start
+### 3. Add Environment Variables
 
+Create a `.env` file in the root directory and add your Perenual API key:
 
+```
+PERENUAL_API_KEY=your_api_key_here
+```
+
+> 🔒 Note: The `.env` file is already listed in `.gitignore` and won’t be committed to version control.
+
+If you don’t have an API key, you can [request one here](https://perenual.com/docs/api) or contact the maintainer.
+
+### 4. Start the App
+
+Run the app with Expo:
+
+```bash
+npx expo start
+```
