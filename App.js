@@ -39,7 +39,7 @@ const commonPlants = [
 ];
 
 const API_URL = 'https://yjf4i5vcg2.execute-api.us-east-1.amazonaws.com/dev/plants';
-const PERENUAL_API_KEY = 'FILL IN - AVAILABLE AT REQUEST';
+const PERENUAL_API_KEY = 'FILL IN';
 
 // Plant Care Screen Component
 const PlantCareScreen = ({ 
