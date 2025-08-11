@@ -84,8 +84,8 @@ Please contact me if you would like to borrow my API key.
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/plantcare-app.git
-cd plantcare-app
+git clone https://github.com/yourusername/PlantCare.git
+cd PlantCare
 ```
 
 ### 2. Install dependencies
