@@ -4,7 +4,7 @@
 
 ---
 
-## 📱 Features
+## Features
 
 - Add and delete plants from your personal list
 - Automatically sets watering intervals using Perenual API data
@@ -17,7 +17,7 @@
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Frontend
 
@@ -48,7 +48,7 @@
 
 ---
 
-## 📸 Growth Gallery
+## Growth Gallery
 
 The growth gallery feature allows users to document their plants' progress with photos:
 
@@ -60,13 +60,13 @@ The growth gallery feature allows users to document their plants' progress with 
 
 ---
 
-## 🔔 Notifications
+## Notifications
 
 PlantCare uses Expo's Local Notifications API to remind users when to water plants. Notifications are personalized based on watering intervals retrieved from the Perenual API and the plant's last watered date.
 
 ---
 
-## 🔐 API Keys
+## API Keys
 
 ### AWS Endpoints
 
@@ -79,13 +79,13 @@ Please contact me if you would like to borrow my API key.
 
 ---
 
-## ▶️ Running the App Locally
+## ▶ Running the App Locally
 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/plantcare-app.git
-cd plantcare-app
+git clone https://github.com/yourusername/PlantCare.git
+cd PlantCare
 ```
 
 ### 2. Install dependencies
