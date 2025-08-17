@@ -7,14 +7,14 @@
 ## App Pages
 
 <p float="left">
-  <img src="https://github.com/user-attachments/assets/704f553d-639f-42da-900b-5084431cbb2b" width="60%" />
-  <img src="https://github.com/user-attachments/assets/bbb046d2-1ed5-4f57-9198-5cf3d570f14b" width="60%" />
+  <img src="https://github.com/user-attachments/assets/704f553d-639f-42da-900b-5084431cbb2b" width="30%" />
+  <img src="https://github.com/user-attachments/assets/bbb046d2-1ed5-4f57-9198-5cf3d570f14b" width="30%" />
 </p>
 
 <p float="left">
-  <img src="https://github.com/user-attachments/assets/2e29661d-0f4c-418c-8048-e7ef156a98fd" width="60%" />
-  <img src="https://github.com/user-attachments/assets/a19ee9f3-a13b-4db5-94d8-d3adb9c4af4a" width="60%" />
-</p>
+  <img src="https://github.com/user-attachments/assets/2e29661d-0f4c-418c-8048-e7ef156a98fd" width="30%" />
+  <img src="https://github.com/user-attachments/assets/a19ee9f3-a13b-4db5-94d8-d3adb9c4af4a" width="30%" />
+</p
 
 ---
 
