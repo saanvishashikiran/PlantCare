@@ -4,6 +4,15 @@
 
 ---
 
+## App Pages
+
+<img width="1179" height="2556" alt="IMG_9538" src="https://github.com/user-attachments/assets/704f553d-639f-42da-900b-5084431cbb2b" />
+<img width="1179" height="2556" alt="IMG_9539" src="https://github.com/user-attachments/assets/bbb046d2-1ed5-4f57-9198-5cf3d570f14b" />
+<img width="1179" height="2556" alt="IMG_9537" src="https://github.com/user-attachments/assets/2e29661d-0f4c-418c-8048-e7ef156a98fd" />
+<img width="1179" height="2556" alt="IMG_9536" src="https://github.com/user-attachments/assets/a19ee9f3-a13b-4db5-94d8-d3adb9c4af4a" />
+
+---
+
 ## Features
 
 - Add and delete plants from your personal list
